@@ -4,6 +4,7 @@ import com.nngu.fqw.statisticcalculator.model.WindowInfo;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static java.math.BigDecimal.ROUND_HALF_UP;
@@ -33,6 +34,62 @@ public class StatisticCalculator {
                 result.put(windowSize, min);
             }
         }
+        return result;
+    }
+
+    public LocalDateTime getEndOfInterval(final Map<LocalDateTime, Double> statistic) {
+        int arrSize = statistic.size();
+        Double[] values = statistic.values().toArray(new Double[arrSize]);
+
+        Double[] acfs = new Double[arrSize];
+        for (int lag = 1; lag < arrSize - 2; lag++) {
+            BigDecimal sumX = BigDecimal.ZERO;
+            BigDecimal sumXplusLag = BigDecimal.ZERO;
+            BigDecimal sumOfXonXplusLag = BigDecimal.ZERO;
+
+            for (int i = 0; i < arrSize - lag; i++) {
+                sumX = sumX.add(BigDecimal.valueOf(values[i]));
+                sumXplusLag = sumXplusLag.add(BigDecimal.valueOf(values[i + lag]));
+                sumOfXonXplusLag = sumOfXonXplusLag.add(BigDecimal.valueOf(values[i]).multiply(BigDecimal.valueOf(values[i + lag])));
+            }
+
+            BigDecimal avgX = sumX.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
+            BigDecimal avgXplusLag = sumXplusLag.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
+
+            BigDecimal DX = BigDecimal.ZERO;
+            BigDecimal DXplusLag = BigDecimal.ZERO;
+
+            for (int i = 0; i < arrSize - lag; i++) {
+                DX = DX.add((avgX.subtract(BigDecimal.valueOf(values[i]))).pow(2));
+                DXplusLag = DXplusLag.add((avgXplusLag.subtract(BigDecimal.valueOf(values[i + lag]))).pow(2));
+            }
+
+            DX = DX.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
+            DXplusLag = DXplusLag.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
+
+            BigDecimal sigmaX = sqrt(DX);
+            BigDecimal sigmaXplusLag = sqrt(DXplusLag);
+            BigDecimal avgOfXonXplusLag = sumOfXonXplusLag.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
+            BigDecimal cov = avgOfXonXplusLag.subtract(avgX.multiply(avgXplusLag));
+            BigDecimal acf = cov.divide(sigmaX.multiply(sigmaXplusLag), SCALE, ROUND_HALF_UP);
+
+            acfs[lag] = acf.abs().doubleValue();
+        }
+
+        int indOfMax = 0;
+        double maxAcf = 0.7;
+        for (int i = 1; i < arrSize - 2; i++) {
+            if (maxAcf < acfs[i]) {
+                maxAcf = acfs[i];
+                indOfMax = i;
+            }
+        }
+
+        LocalDateTime result = null;
+        if (indOfMax > 0) {
+            result = (LocalDateTime) statistic.keySet().toArray()[indOfMax];
+        }
+
         return result;
     }
 

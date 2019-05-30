@@ -14,11 +14,13 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import static com.nngu.fqw.statisticcalculator.service.StatisticService.FRAME_SIZE;
+
 @Controller
 @RequestMapping("/statistic")
 public class StatisticController {
 
-    private static final Duration defaultFrameSize = Duration.ofMinutes(10);
+    private static final Duration DEFAULT_FRAME_SIZE = Duration.ofMinutes(1);
 
     private StatisticService statisticService;
     private ResponseHelper responseHelper;
@@ -31,20 +33,20 @@ public class StatisticController {
 
     @RequestMapping(value = "/count", method = RequestMethod.GET)
     public String packetCountStatistic(@RequestParam(value = "protocol", required = false) String protocol, ModelMap modelMap) {
-        Map<LocalDateTime, Double> chartData = statisticService.getPacketCountStatistic(protocol, defaultFrameSize);
+        Map<LocalDateTime, Double> chartData = statisticService.getPacketCountStatistic(protocol, DEFAULT_FRAME_SIZE);
 
         modelMap.addAttribute("protocol", protocol != null ? protocol : "all");
-        modelMap.addAttribute("frameSize", defaultFrameSize.toString());
+        modelMap.addAttribute("frameSize", DEFAULT_FRAME_SIZE.toString());
         modelMap.addAttribute("chartData", responseHelper.getChartData(chartData));
         return "chart-count";
     }
 
     @RequestMapping(value = "/average", method = RequestMethod.GET)
     public String packetAverageStatistic(@RequestParam(value = "protocol", required = false) String protocol, ModelMap modelMap) {
-        Map<LocalDateTime, Double> chartData = statisticService.getPacketAverageStatistic(protocol, defaultFrameSize);
+        Map<LocalDateTime, Double> chartData = statisticService.getPacketAverageStatistic(protocol, DEFAULT_FRAME_SIZE);
 
         modelMap.addAttribute("protocol", protocol != null ? protocol : "all");
-        modelMap.addAttribute("frameSize", defaultFrameSize.toString());
+        modelMap.addAttribute("frameSize", DEFAULT_FRAME_SIZE.toString());
         modelMap.addAttribute("chartData", responseHelper.getChartData(chartData));
         return "chart-avg";
     }
@@ -71,5 +73,23 @@ public class StatisticController {
             modelMap.addAttribute("chartData", responseHelper.getChartData(statistic.getTimeSeries()));
         }
         return "window-chart-avg";
+    }
+
+    @RequestMapping(value = "/interval/count", method = RequestMethod.GET)
+    public String getMinIntervalCount(@RequestParam(value = "protocol", required = false) String protocol, ModelMap modelMap) throws InterruptedException {
+        Map<LocalDateTime, Double> chartData = statisticService.getMinIntervalCount(protocol);
+            modelMap.addAttribute("protocol", protocol != null ? protocol : "all");
+            modelMap.addAttribute("frameSize", FRAME_SIZE.toString());
+            modelMap.addAttribute("chartData", responseHelper.getChartData(chartData));
+        return "chart-count";
+    }
+
+    @RequestMapping(value = "/interval/avg", method = RequestMethod.GET)
+    public String getMinIntervalAvg(@RequestParam(value = "protocol", required = false) String protocol, ModelMap modelMap) throws InterruptedException {
+        Map<LocalDateTime, Double> chartData = statisticService.getMinIntervalAvg(protocol);
+            modelMap.addAttribute("protocol", protocol != null ? protocol : "all");
+            modelMap.addAttribute("frameSize", FRAME_SIZE.toString());
+            modelMap.addAttribute("chartData", responseHelper.getChartData(chartData));
+        return "chart-avg";
     }
 }

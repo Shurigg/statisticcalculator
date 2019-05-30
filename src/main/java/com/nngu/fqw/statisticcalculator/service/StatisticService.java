@@ -18,6 +18,8 @@ import java.util.concurrent.*;
 @Service
 public class StatisticService {
 
+    public static final Duration FRAME_SIZE = Duration.ofMinutes(1).plusSeconds(0);
+
     private static final int THREAD_COUNT = 8;
     private static final int TIMEOUT_IN_HOUR = 16;
 
@@ -50,68 +52,41 @@ public class StatisticService {
         LocalDateTime start = repo.findMinTimeOfPacket();
         LocalDateTime end = repo.findMaxTimeOfPacket();
 
-        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
-
-        Map<Double, TimeSeriesStatistic> timeSeriesStatistics = new ConcurrentHashMap<>();
-        Duration duration = timeHelper.getNextDuration(Duration.between(start, end));
-        while (duration != null) {
-            Duration currentDuration = duration;
-            CompletableFuture
-                    .supplyAsync(() -> getTimeSeriesStatistic(start, end, currentDuration, protocol, StatisticType.COUNT), executorService)
-                    .thenApply(statistic -> {
-                        System.out.println(currentDuration.toString() + " is completed");
-                        return timeSeriesStatistics.put(statistic.getMinSigmaDeviation(), statistic);
-                    });
-            duration = timeHelper.getNextDuration(duration);
-        }
-        executorService.shutdown();
-        executorService.awaitTermination(TIMEOUT_IN_HOUR, TimeUnit.HOURS);
-        TimeSeriesStatistic bestStatistic = null;
-        for (TimeSeriesStatistic info : timeSeriesStatistics.values()) {
-            if (bestStatistic == null) {
-                bestStatistic = info;
-            } else {
-                if (info != null && bestStatistic.getMinSigmaDeviation() > info.getMinSigmaDeviation()) {
-                    bestStatistic = info;
-                }
-            }
-        }
-
-        return bestStatistic;
+        return getWindowStatistic(start, end, StatisticType.COUNT, protocol);
     }
 
     public TimeSeriesStatistic getWindowStatisticAvg(String protocol) throws InterruptedException {
         LocalDateTime start = repo.findMinTimeOfPacket();
         LocalDateTime end = repo.findMaxTimeOfPacket();
 
-        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
+        return getWindowStatistic(start, end, StatisticType.AVG, protocol);
+    }
 
-        Map<Double, TimeSeriesStatistic> timeSeriesStatistics = new ConcurrentHashMap<>();
-        Duration duration = timeHelper.getNextDuration(Duration.between(start, end));
-        while (duration != null) {
-            Duration currentDuration = duration;
-            CompletableFuture
-                    .supplyAsync(() -> getTimeSeriesStatistic(start, end, currentDuration, protocol, StatisticType.AVG), executorService)
-                    .thenApply(statistic -> {
-                        System.out.println(currentDuration.toString() + " is completed");
-                        return timeSeriesStatistics.put(statistic.getMinSigmaDeviation(), statistic);
-                    });
-            duration = timeHelper.getNextDuration(duration);
-        }
-        executorService.shutdown();
-        executorService.awaitTermination(TIMEOUT_IN_HOUR, TimeUnit.HOURS);
-        TimeSeriesStatistic bestStatistic = null;
-        for (TimeSeriesStatistic info : timeSeriesStatistics.values()) {
-            if (bestStatistic == null) {
-                bestStatistic = info;
-            } else {
-                if (info != null && bestStatistic.getMinSigmaDeviation() > info.getMinSigmaDeviation()) {
-                    bestStatistic = info;
-                }
+    public Map<LocalDateTime, Double> getMinIntervalCount(String protocol) {
+        LocalDateTime start = repo.findMinTimeOfPacket();
+        LocalDateTime end = LocalDateTime.of(2019, 4, 8, 0, 0, 0);
+
+        Map<LocalDateTime, Double> timeSeries = getTimeSeries(start, end, protocol, FRAME_SIZE, StatisticType.COUNT);
+
+        LocalDateTime endOfInterval = calculator.getEndOfInterval(timeSeries);
+
+        Map<LocalDateTime, Double> result = new TreeMap<>();
+        for (Map.Entry<LocalDateTime, Double> entry : timeSeries.entrySet()) {
+            if (endOfInterval.isAfter(entry.getKey())) {
+                result.put(entry.getKey(), entry.getValue());
             }
         }
 
-        return bestStatistic;
+        return result;
+    }
+
+    public Map<LocalDateTime, Double> getMinIntervalAvg(String protocol){
+        LocalDateTime start = repo.findMinTimeOfPacket();
+        LocalDateTime end = repo.findMaxTimeOfPacket();
+
+        Map<LocalDateTime, Double> result = getTimeSeries(start, end, protocol, FRAME_SIZE, StatisticType.AVG);
+
+        return null;
     }
 
     private TimeSeriesStatistic getTimeSeriesStatistic(LocalDateTime start, LocalDateTime end, Duration duration,
@@ -194,61 +169,35 @@ public class StatisticService {
         }
     }
 
-    private LocalDateTime getEndOfInterval(final Map<LocalDateTime, Double> statistic) {
-//        int arrSize = statistic.size();
-//        Double[] values = statistic.values().toArray(new Double[arrSize]);
-//
-//        Double[] acfs = new Double[arrSize];
-//        for (int lag = 1; lag < arrSize - 2; lag++) {
-//            BigDecimal sumX = BigDecimal.ZERO;
-//            BigDecimal sumXplusLag = BigDecimal.ZERO;
-//            BigDecimal sumOfXonXplusLag = BigDecimal.ZERO;
-//
-//            for (int i = 0; i < arrSize - lag; i++) {
-//                sumX = sumX.add(BigDecimal.valueOf(values[i]));
-//                sumXplusLag = sumXplusLag.add(BigDecimal.valueOf(values[i + lag]));
-//                sumOfXonXplusLag = sumOfXonXplusLag.add(BigDecimal.valueOf(values[i]).multiply(BigDecimal.valueOf(values[i + lag])));
-//            }
-//
-//            BigDecimal avgX = sumX.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
-//            BigDecimal avgXplusLag = sumXplusLag.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
-//
-//            BigDecimal DX = BigDecimal.ZERO;
-//            BigDecimal DXplusLag = BigDecimal.ZERO;
-//
-//            for (int i = 0; i < arrSize - lag; i++) {
-//                DX = DX.add((avgX.subtract(BigDecimal.valueOf(values[i]))).pow(2));
-//                DXplusLag = DXplusLag.add((avgXplusLag.subtract(BigDecimal.valueOf(values[i + lag]))).pow(2));
-//            }
-//
-//            DX = DX.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
-//            DXplusLag = DXplusLag.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
-//
-//            BigDecimal sigmaX = sqrt(DX);
-//            BigDecimal sigmaXplusLag = sqrt(DXplusLag);
-//            BigDecimal avgOfXonXplusLag = sumOfXonXplusLag.divide(BigDecimal.valueOf(arrSize - lag), SCALE, ROUND_HALF_UP);
-//            BigDecimal cov = avgOfXonXplusLag.subtract(avgX.multiply(avgXplusLag));
-//            BigDecimal acf = cov.divide(sigmaX.multiply(sigmaXplusLag), SCALE, ROUND_HALF_UP);
-//
-//            acfs[lag] = acf.abs().doubleValue();
-//        }
-//
-//        int indOfMax = 0;
-//        double maxAcf = 0.7;
-//        for (int i = 1; i < arrSize - 2; i++) {
-//            if (maxAcf < acfs[i]) {
-//                maxAcf = acfs[i];
-//                indOfMax = i;
-//            }
-//        }
-//
-//        LocalDateTime result = null;
-//        if (indOfMax > 0) {
-//            result = (LocalDateTime) statistic.keySet().toArray()[indOfMax];
-//        }
-//
-//        return result;
+    private TimeSeriesStatistic getWindowStatistic(LocalDateTime start, LocalDateTime end,
+                                                   StatisticType type, String protocol) throws InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
 
-        return null;
+        Map<Double, TimeSeriesStatistic> timeSeriesStatistics = new ConcurrentHashMap<>();
+        Duration duration = timeHelper.getNextDuration(Duration.between(start, end));
+        while (duration != null) {
+            Duration currentDuration = duration;
+            CompletableFuture
+                    .supplyAsync(() -> getTimeSeriesStatistic(start, end, currentDuration, protocol, type), executorService)
+                    .thenApply(statistic -> {
+                        System.out.println(currentDuration.toString() + " is completed");
+                        return timeSeriesStatistics.put(statistic.getMinSigmaDeviation(), statistic);
+                    });
+            duration = timeHelper.getNextDuration(duration);
+        }
+        executorService.shutdown();
+        executorService.awaitTermination(TIMEOUT_IN_HOUR, TimeUnit.HOURS);
+        TimeSeriesStatistic bestStatistic = null;
+        for (TimeSeriesStatistic info : timeSeriesStatistics.values()) {
+            if (bestStatistic == null) {
+                bestStatistic = info;
+            } else {
+                if (info != null && bestStatistic.getMinSigmaDeviation() > info.getMinSigmaDeviation()) {
+                    bestStatistic = info;
+                }
+            }
+        }
+
+        return bestStatistic;
     }
 }
